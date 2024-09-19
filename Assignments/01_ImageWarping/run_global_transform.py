@@ -1,13 +1,19 @@
 import gradio as gr
 import cv2
 import numpy as np
+import jax
+import jax.numpy as jnp
+
+@jax.jit
+def apply_trans():
+    pass
 
 # Function to convert 2x3 affine matrix to 3x3 for matrix multiplication
 def to_3x3(affine_matrix):
     return np.vstack([affine_matrix, [0, 0, 1]])
 
 # Function to apply transformations based on user inputs
-def apply_transform(image, scale, rotation, translation_x, translation_y, flip_horizontal):
+def apply_transform(image: np.ndarray, scale, rotation, translation_x, translation_y, flip_horizontal):
 
     # Convert the image from PIL format to a NumPy array
     image = np.array(image)
@@ -20,6 +26,12 @@ def apply_transform(image, scale, rotation, translation_x, translation_y, flip_h
 
     ### FILL: Apply Composition Transform 
     # Note: for scale and rotation, implement them around the center of the image （围绕图像中心进行放缩和旋转）
+    w, h, c = transformed_image.shape
+    j_image = jnp.array(image) # [x, y, 3]
+    x, y = jnp.arange(w), jnp.arange(h)
+    x, y = jnp.meshgrid(x, y)
+    print(w, h)
+    coordinate = jnp.concat([x.reshape(w, h, 1), y.reshape(w, h, 1), jnp.ones_like(y).reshape(w, h, 1)], axis=2)
 
     return transformed_image
 
@@ -39,10 +51,10 @@ def interactive_transform():
                 translation_x = gr.Slider(minimum=-300, maximum=300, step=10, value=0, label="Translation X")
                 translation_y = gr.Slider(minimum=-300, maximum=300, step=10, value=0, label="Translation Y")
                 flip_horizontal = gr.Checkbox(label="Flip Horizontal")
-            
+
             # Right: Output image
             image_output = gr.Image(label="Transformed Image")
-        
+
         # Automatically update the output when any slider or checkbox is changed
         inputs = [
             image_input, scale, rotation, 
