@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import gradio as gr
+import jax
+import jax.numpy as jnp
 
 # 初始化全局变量，存储控制点和目标点
 points_src = []
@@ -40,6 +42,26 @@ def record_points(evt: gr.SelectData):
     return marked_image
 
 # 执行仿射变换
+alpha = 1
+eps = 1e-2
+
+@jax.jit
+def rbf_deform(query, points_src, points_dst):
+    """
+    query: (2, ) array
+    points_src: (M, 2) array
+    points_dst: (M, 2) array
+    """
+    query = jnp.array([query[1], query[0]])
+    disp = points_src - points_dst
+    distance = jnp.linalg.norm(points_dst - query[:, None].T, axis=1)
+    weights = jnp.exp(-distance ** 2 * 1e-4) # (M, )
+    weights = weights / (jnp.sum(weights) + eps)
+    d = jnp.sum(weights[:, None] * disp, axis=0)
+    out = query + d
+    return jnp.array([out[1], out[0]])
+
+
 
 def point_guided_deformation(image, source_pts, target_pts, alpha=1.0, eps=1e-8):
     """ 
@@ -49,7 +71,16 @@ def point_guided_deformation(image, source_pts, target_pts, alpha=1.0, eps=1e-8)
     """
     
     warped_image = np.array(image)
+    w, h, _ = image.shape
     ### FILL: 基于MLS or RBF 实现 image warping
+    source_pts = jnp.array(source_pts.astype(np.float32))
+    target_pts = jnp.array(target_pts.astype(np.float32))
+    queries = jnp.array([[i, j] for i in range(w) for j in range(h)])
+    out = jax.vmap(rbf_deform, in_axes=(0, None, None))(queries, source_pts, target_pts)
+    out = np.array(out.reshape(w, h, 2).astype(np.int32))
+    # clamp
+    out = np.clip(out, 0, np.array([w-1, h-1]))
+    warped_image = warped_image[out[:, :, 0], out[:, :, 1]]
 
     return warped_image
 

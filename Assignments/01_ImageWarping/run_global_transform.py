@@ -1,16 +1,26 @@
 import gradio as gr
 import cv2
 import numpy as np
-import jax
-import jax.numpy as jnp
-
-@jax.jit
-def apply_trans():
-    pass
 
 # Function to convert 2x3 affine matrix to 3x3 for matrix multiplication
 def to_3x3(affine_matrix):
     return np.vstack([affine_matrix, [0, 0, 1]])
+
+def build_transform(scale, rotation, translation_x, translation_y, w, h, flip_horizontal):
+    transform = np.eye(3, 3)
+    # first, move to center, since input x,y is [0,0] at top-left
+    transform = to_3x3(np.array([[1, 0, -w/2], [0, 1, -h/2]])) @ transform
+    # second, rotate
+    if flip_horizontal:
+        transform = to_3x3(np.array([[-1, 0, 0], [0, 1, 0]])) @ transform
+    transform = to_3x3(np.array([[np.cos(rotation), -np.sin(rotation), 0], [np.sin(rotation), np.cos(rotation), 0]])) @ transform
+    # third, scale
+    transform = to_3x3(np.array([[scale, 0, 0], [0, scale, 0]])) @ transform
+    # fourth, translate
+    transform = to_3x3(np.array([[1, 0, translation_x], [0, 1, translation_y]])) @ transform
+    # fifth, move back to top-left
+    transform = to_3x3(np.array([[1, 0, w/2], [0, 1, h/2]])) @ transform
+    return to_3x3(transform)
 
 # Function to apply transformations based on user inputs
 def apply_transform(image: np.ndarray, scale, rotation, translation_x, translation_y, flip_horizontal):
@@ -26,12 +36,10 @@ def apply_transform(image: np.ndarray, scale, rotation, translation_x, translati
 
     ### FILL: Apply Composition Transform 
     # Note: for scale and rotation, implement them around the center of the image （围绕图像中心进行放缩和旋转）
+
     w, h, c = transformed_image.shape
-    j_image = jnp.array(image) # [x, y, 3]
-    x, y = jnp.arange(w), jnp.arange(h)
-    x, y = jnp.meshgrid(x, y)
-    print(w, h)
-    coordinate = jnp.concat([x.reshape(w, h, 1), y.reshape(w, h, 1), jnp.ones_like(y).reshape(w, h, 1)], axis=2)
+    affine_matrix = build_transform(scale, rotation / 180 * np.pi, translation_x, translation_y, w, h, flip_horizontal)
+    transformed_image = cv2.warpAffine(transformed_image, affine_matrix[:2], (h, w))
 
     return transformed_image
 

@@ -35,6 +35,11 @@ To install requirements:
 python -m pip install -r requirements.txt
 ```
 
+If you have a nvidia graphics card, you can run:
+```sh
+python -m pip install -U jax[cuda12]
+```
+to utilize jax cuda.
 
 ## Running
 
