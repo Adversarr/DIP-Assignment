@@ -45,7 +45,6 @@ def record_points(evt: gr.SelectData):
 alpha = 1e3
 eps = 1e-2
 
-@jax.jit
 def rbf_basis(xi, xj, d):
     return jnp.exp(-jnp.linalg.norm(xi - xj) ** 2 / d)
 
@@ -55,30 +54,32 @@ def rbf_deform(query, points_src, points_dst, x):
     query: (2, ) array
     points_src: (M, 2) array
     points_dst: (M, 2) array
-    x: (M+3, 2) array, coefficient for each basis.
+    x: (2, M+3) array, coefficient for each basis.
 
-    Result.x = \sum_j x_j.x Basis_j(query)
+    Result = \sum_j x_j Basis_j(query)
     """
 
     M = points_src.shape[0]
     basis = jnp.array([rbf_basis(query, points_dst[j], alpha) for j in range(M)] + [query[0], query[1], 1])
-    print(basis.shape, x.shape)
     out_x, out_y = jnp.sum(x[0, :] * basis), jnp.sum(x[1, :] * basis)
-
     return jnp.array([out_x, out_y])
 
 
 def fit_rbf(point_src, point_dst):
-    # fit the matrix
     M = point_dst.shape[0]
+    # The basis matrix. The first M row/col is the RBF basis, and the last 3 row/col is the affine basis(1, x, y)
     A = np.zeros((M+3, M+3))
+    # RBF Part:
     A[:M, :M] = np.array([[rbf_basis(point_dst[i], point_dst[j], alpha) for j in range(M)] for i in range(M)])
+    # Affine Part:
     A[:M, M:M+2] = point_dst
     A[:M, M+2] = 1
     A[M:M+2, :M] = point_dst.T
     A[M+2, :M] = 1
+    # Rhs vector. see the equation in `rbf_deform`
     b = np.zeros((M+3, 2))
-    b[:M] = point_src
+    b[:M] = point_src # NOTE: we fit the backward map. (i.e. foreach pixel in target image, find the source pixel)
+    # the coefficient of the basis, also the fitting result.
     x = np.linalg.solve(A, b).T
     return A, x
 
@@ -95,21 +96,18 @@ def point_guided_deformation(image, source_pts, target_pts, alpha=1.0, eps=1e-8)
     ### FILL: 基于MLS or RBF 实现 image warping
     # source_pts[:, 0], source_pts[:, 1] = source_pts[:, 1], source_pts[:, 0]
     # target_pts[:, 0], target_pts[:, 1] = target_pts[:, 1], target_pts[:, 0]
-    source_pts = np.array(source_pts)
-    source_pts = np.flip(source_pts, axis=1)
-    target_pts = np.array(target_pts)
-    target_pts = np.flip(target_pts, axis=1)
+    source_pts = np.flip(np.array(source_pts), axis=1)
+    target_pts = np.flip(np.array(target_pts), axis=1)
+    _, x = fit_rbf(source_pts, target_pts)
 
-
-    A, x = fit_rbf(source_pts, target_pts)
-    print(A, x)
-
+    # Utilize Jax to speed up the computation
     source_pts = jnp.array(source_pts.astype(np.float32))
     target_pts = jnp.array(target_pts.astype(np.float32))
     queries = jnp.array([[i, j] for i in range(w) for j in range(h)])
     out = jax.vmap(rbf_deform, in_axes=(0, None, None, None))(queries, source_pts, target_pts, x)
+    # copy back to numpy(cpu)
     out = np.array(out.reshape(w, h, 2).astype(np.int32))
-    # clamp
+    # clamp to avoud out-of-bound.
     out = np.clip(out, 0, np.array([w-1, h-1]))
     warped_image = warped_image[out[:, :, 0], out[:, :, 1]]
 
