@@ -1,6 +1,6 @@
 # DIP with PyTorch
 
-This repository is the official implementation of [DIP with PyTorch](https://arxiv.org/abs/2030.12345). 
+This repository is the official implementation of [DIP with PyTorch](https://github.com/Adversarr/DIP-Assignment/tree/hw02/Assignments/02_DIPwithPyTorch/). 
 
 ## Main Results
 
@@ -9,18 +9,20 @@ This repository is the official implementation of [DIP with PyTorch](https://arx
 ![](poisson_out.png)
 
 Input are:
+
 ![](Figure_1.png)
 and
+
 ![](Temperature_cb.png)
 
 The mask generation is assuming your input is convex. The algorithm is just water filling.
 
 ### Pix2Pix
 
-![](result_3.png)
+![](result_1.png)
 
-The architecture of network is just a simple U-Net architecture. To maximize training efficiency, I use
-batch normalization and `LeakyReLU` in the CNN.
+The architecture of network is just a simple U-Net. To maximize training efficiency, I use
+batch normalization and `LeakyReLU` in the CNN. Maxpooling and Upsample are utilized to reduce the dimension.
 
 ## Requirements
 
@@ -40,6 +42,3 @@ python run_blending_gradio.py
 # Pix2Pix
 python Pix2Pix/train.py
 ```
-
->📋  Describe how to train the models, with example commands on how to train the models in your paper, including the full training procedure and appropriate hyperparameters.
-

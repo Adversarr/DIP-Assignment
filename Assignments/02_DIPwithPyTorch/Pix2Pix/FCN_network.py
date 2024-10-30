@@ -8,11 +8,13 @@ def forward_block(in_feat, out_feat):
         nn.LeakyReLU(inplace=True),
         nn.BatchNorm2d(out_feat),
         nn.Conv2d(out_feat, out_feat, kernel_size=3, stride=1, padding=1),
-        nn.LeakyReLU(inplace=True)
+        nn.LeakyReLU(inplace=True),
+        nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
     )
  
 def backward_block(in_feat, out_feat, kernel_size=4, stride=2, padding=1):
     return nn.Sequential(
+        nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
         nn.BatchNorm2d(in_feat),
         nn.ConvTranspose2d(in_feat, out_feat, kernel_size=kernel_size, stride=stride, padding=padding),
         nn.LeakyReLU(inplace=True),
@@ -22,8 +24,8 @@ def backward_block(in_feat, out_feat, kernel_size=4, stride=2, padding=1):
     )
 
 class FullyConvNetwork(nn.Module):
-    UP_PASS = [3, 8, 16]
-    DOWN_PASS = [16, 8, 8]
+    UP_PASS = [3, 64, 64]
+    DOWN_PASS = [64, 64, 8]
 
     def __init__(self):
         super().__init__()
@@ -50,13 +52,8 @@ class FullyConvNetwork(nn.Module):
 
     @staticmethod
     def init_weights(m):
-        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
-            nn.init.kaiming_normal_(m.weight.data, nonlinearity='leaky_relu')
-            if m.bias is not None:
-                nn.init.constant_(m.bias.data, 0)
-        elif isinstance(m, nn.BatchNorm2d):
-            nn.init.constant_(m.weight.data, 1)
-            nn.init.constant_(m.bias.data, 0)
+        if hasattr(m, 'reset_parameters'):
+            m.reset_parameters()
 
     def forward(self, x):
         # Encoder forward pass
