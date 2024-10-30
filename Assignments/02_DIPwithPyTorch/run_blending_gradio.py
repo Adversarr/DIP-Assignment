@@ -2,6 +2,7 @@ import gradio as gr
 from PIL import ImageDraw
 import numpy as np
 import torch
+from torch.nn import functional as F
 
 # Initialize the polygon state
 def initialize_polygon():
@@ -109,6 +110,45 @@ def create_mask_from_points(points, img_h, img_w):
     ### FILL: Obtain Mask from Polygon Points. 
     ### 0 indicates outside the Polygon.
     ### 255 indicates inside the Polygon.
+    def water_fill(mask, x, y):
+        mask[x, y] = 255
+        queue = [(x, y)]
+        is_filled = lambda x, y: mask[x, y] > 0
+        def in_triangle(x, y, t0x, t0y, t1x, t1y, t2x, t2y):
+            def sign(px, py, qx, qy, rx, ry):
+                return (px - rx) * (qy - ry) - (qx - rx) * (py - ry)
+            b1 = sign(x, y, t0x, t0y, t1x, t1y) < 0.0
+            b2 = sign(x, y, t1x, t1y, t2x, t2y) < 0.0
+            b3 = sign(x, y, t2x, t2y, t0x, t0y) < 0.0
+            return ((b1 == b2) and (b2 == b3))
+
+        def in_triangles(x, y):
+            for i in range(len(points)):
+                t0x, t0y = points[i]
+                t1x, t1y = points[(i + 1) % len(points)]
+                t2x, t2y = points[(i + 2) % len(points)]
+                if in_triangle(x, y, t0x, t0y, t1x, t1y, t2x, t2y):
+                    return True
+            return False
+
+        def enqueue(x, y):
+            if x >= 0 and y >= 0 and x < mask.shape[0] and y < mask.shape[1] and not is_filled(x, y):
+                if in_triangles(x, y):
+                    mask[x, y] = 255
+                    queue.append((x, y))
+
+        while queue:
+            x, y = queue.pop(0)
+            enqueue(x - 1, y)
+            enqueue(x + 1, y)
+            enqueue(x, y - 1)
+            enqueue(x, y + 1)
+    # Fill the polygon with 255
+    mean = np.mean(points, axis=0)
+    water_fill(mask, int(mean[0]), int(mean[1]))
+
+    total = np.sum(mask > 0)
+    print(f'Total pixels in mask: {total}')
 
     return mask
 
@@ -126,11 +166,14 @@ def cal_laplacian_loss(foreground_img, foreground_mask, blended_img, background_
     Returns:
         torch.Tensor: The computed Laplacian loss.
     """
-    loss = torch.tensor(0.0, device=foreground_img.device)
+    # loss = torch.tensor(0.0, device=foreground_img.device)
     ### FILL: Compute Laplacian Loss with https://pytorch.org/docs/stable/generated/torch.nn.functional.conv2d.html.
     ### Note: The loss is computed within the masks.
-
-    return loss
+    weight = torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], device=foreground_img.device).float()
+    weight = torch.stack([weight] * 3).unsqueeze(0).clone() / 4
+    fo = F.conv2d(background_mask * foreground_img, weight, padding=1)
+    bl = F.conv2d(background_mask * blended_img, weight, padding=1)
+    return F.mse_loss(fo, bl)
 
 # Perform Poisson image blending
 def blending(foreground_image_original, background_image_original, dx, dy, polygon_state):
@@ -176,21 +219,28 @@ def blending(foreground_image_original, background_image_original, dx, dy, polyg
     blended_img.requires_grad = True
 
     # Set up optimizer
-    optimizer = torch.optim.Adam([blended_img], lr=1e-3)
+    optimizer = torch.optim.Adam([blended_img], lr=1e-2)
+    # optimizer = torch.optim.LBFGS([blended_img], lr=1e-1, max_iter=20, history_size=100, line_search_fn='strong_wolfe')
 
     # Optimization loop
     iter_num = 10000
+
+
     for step in range(iter_num):
         blended_img_for_loss = blended_img.detach() * (1. - bg_mask_tensor) + blended_img * bg_mask_tensor  # Only blending in the mask region
 
-        loss = cal_laplacian_loss(fg_img_tensor, fg_mask_tensor, blended_img_for_loss, bg_mask_tensor)
+        def closure():
+            optimizer.zero_grad()
+            loss = cal_laplacian_loss(fg_img_tensor, fg_mask_tensor, blended_img_for_loss, bg_mask_tensor)
+            loss.backward()
+            return loss
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        loss = optimizer.step(closure)
 
         if step % 50 == 0:
             print(f'Optimize step: {step}, Laplacian distance loss: {loss.item()}')
+            if loss.item() < 1e-8:
+                break
 
         if step == (iter_num // 2): ### decrease learning rate at the half step
             optimizer.param_groups[0]['lr'] *= 0.1

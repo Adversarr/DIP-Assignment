@@ -7,7 +7,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from facades_dataset import FacadesDataset
 from FCN_network import FullyConvNetwork
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 
 def tensor_to_image(tensor):
     """
@@ -133,6 +133,7 @@ def validate(model, dataloader, criterion, device, epoch, num_epochs):
     # Calculate average validation loss
     avg_val_loss = val_loss / len(dataloader)
     print(f'Epoch [{epoch + 1}/{num_epochs}], Validation Loss: {avg_val_loss:.4f}')
+    return avg_val_loss
 
 def main():
     """
@@ -148,22 +149,27 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=100, shuffle=False, num_workers=4)
 
+    def count_parameters(model):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
     # Initialize model, loss function, and optimizer
     model = FullyConvNetwork().to(device)
     criterion = nn.L1Loss()
     optimizer = optim.Adam(model.parameters(), lr=0.001, betas=(0.5, 0.999))
 
+    print(f'The model has {count_parameters(model):,} trainable parameters')
     # Add a learning rate scheduler for decay
-    scheduler = StepLR(optimizer, step_size=200, gamma=0.2)
+    # scheduler = StepLR(optimizer, step_size=200, gamma=0.2)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
 
     # Training loop
     num_epochs = 800
     for epoch in range(num_epochs):
         train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, num_epochs)
-        validate(model, val_loader, criterion, device, epoch, num_epochs)
+        val = validate(model, val_loader, criterion, device, epoch, num_epochs)
 
         # Step the scheduler after each epoch
-        scheduler.step()
+        scheduler.step(val)
 
         # Save model checkpoint every 20 epochs
         if (epoch + 1) % 20 == 0:

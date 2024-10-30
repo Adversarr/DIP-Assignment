@@ -1,0 +1,7 @@
+train_results/*
+checkpoints/*
+datasets/*
+val_results/
+train_list.txt
+val_list.txt
+*.pyc
