@@ -42,3 +42,4 @@ rm $TAR_FILE
 
 find "${TARGET_DIR}train" -type f -name "*.jpg" |sort -V > ./train_list.txt
 find "${TARGET_DIR}val" -type f -name "*.jpg" |sort -V > ./val_list.txt
+find "${TARGET_DIR}test" -type f -name "*.jpg" |sort -V > ./test_list.txt
