@@ -212,4 +212,3 @@ if __name__ == "__main__":
         logger=MLFlowLogger(experiment_name="facades", log_model=True),
     )
     trainer.fit(lit_model, datamodule=DataModule())
-
