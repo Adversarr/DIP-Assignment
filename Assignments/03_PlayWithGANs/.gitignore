@@ -1,0 +1,7 @@
+mlruns
+test_list.txt
+train_list.txt
+val_list.txt
+__pycache__
+datasets/
+train_results
