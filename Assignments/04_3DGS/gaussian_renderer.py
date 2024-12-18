@@ -46,12 +46,32 @@ class GaussianRenderer(nn.Module):
         # 4. Transform covariance to camera space and then to 2D
         # Compute Jacobian of perspective projection
         J_proj = torch.zeros((N, 2, 3), device=means3D.device)
-        ### FILL:
-        ### J_proj = ...
+        ### FILL: Compute the Jacobian of the projection
+        # Extract intrinsic parameters
+        fx = K[0, 0]
+        fy = K[1, 1]
+
+        # Extract camera-space coordinates
+        x = cam_points[:, 0]  # (N,)
+        y = cam_points[:, 1]  # (N,)
+        z = cam_points[:, 2]  # (N,)
+
+        # Avoid division by zero (though z > 0 due to clipping in the earlier step)
+        eps = 1e-6
+        z = z.clamp(min=eps)
+
+        # Compute Jacobian for each point
+        J_proj[:, 0, 0] = fx / z                   # ∂u/∂x
+        J_proj[:, 0, 1] = 0                        # ∂u/∂y
+        J_proj[:, 0, 2] = -(fx * x) / (z * z)      # ∂u/∂z
+
+        J_proj[:, 1, 0] = 0                        # ∂v/∂x
+        J_proj[:, 1, 1] = fy / z                   # ∂v/∂y
+        J_proj[:, 1, 2] = -(fy * y) / (z * z)      # ∂v/∂z
         
         # Transform covariance to camera space
         ### FILL: Aplly world to camera rotation to the 3d covariance matrix
-        ### covs_cam = ...  # (N, 3, 3)
+        covs_cam = torch.matmul(R, torch.matmul(covs3d, R.T))  # (N, 3, 3)
         
         # Project to 2D
         covs2D = torch.bmm(J_proj, torch.bmm(covs_cam, J_proj.permute(0, 2, 1)))  # (N, 2, 2)
@@ -76,8 +96,21 @@ class GaussianRenderer(nn.Module):
         
         # Compute determinant for normalization
         ### FILL: compute the gaussian values
-        ### gaussian = ... ## (N, H, W)
-    
+        # Compute determinant for normalization (N,)
+        det_cov = covs2D[:, 0, 0] * covs2D[:, 1, 1] - covs2D[:, 0, 1] * covs2D[:, 1, 0]  # (N,)
+        norm_factor = 1.0 / (2.0 * torch.pi * torch.sqrt(det_cov))  # (N,)
+
+        # Compute inverse covariance matrix (N, 2, 2)
+        inv_covs = torch.inverse(covs2D)  # (N, 2, 2)
+        
+        # Compute Mahalanobis distance: dx^T @ inv_cov @ dx (N, H, W)
+        dx = dx.reshape(N, H * W, 2)  # (N, H*W, 2)
+        mahalanobis_dist = torch.einsum('nhi,nij,nhj->nh', dx, inv_covs, dx)  # (N, H*W)
+        mahalanobis_dist = mahalanobis_dist.reshape(N, H, W)  # (N, H, W)
+        
+        # Compute Gaussian values (N, H, W)
+        gaussian = norm_factor[:, None, None] * torch.exp(-0.5 * mahalanobis_dist)  # (N, H, W)
+        
         return gaussian
 
     def forward(
